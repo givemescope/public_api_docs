@@ -100,7 +100,69 @@ Parameters:
 - `page` - page number, starting from `0`.
 - `per_page` - page size (`1..200`).
 
-### 4.4. Applications
+### 4.4. Vacancy Drafts
+
+1. `POST /employers/{company_id}/vacancies/drafts`  
+Purpose: create a vacancy draft and submit it for validation.
+
+2. `GET /employers/{company_id}/vacancies/drafts`  
+Purpose: get drafts of the current recruiter (sorted by `updated_at DESC`).  
+Important: drafts with `accepted` status are not included in this list.
+
+3. `GET /employers/{company_id}/vacancies/drafts/{draft_id}`  
+Purpose: get a draft by ID.
+
+4. `PATCH /employers/{company_id}/vacancies/drafts/{draft_id}`  
+Purpose: partially update a draft and re-submit it for validation.
+
+5. `POST /employers/{company_id}/vacancies/drafts/{draft_id}/publish`  
+Purpose: queue a validated draft for publication.  
+Successful response: `{"status": "queued"}`.
+
+6. `DELETE /employers/{company_id}/vacancies/drafts/{draft_id}`  
+Purpose: delete a draft (if it is not linked to a final vacancy yet).
+
+#### 4.4.1. payload fields for create/update
+
+Required for `POST`:
+- `position` - vacancy title.
+- `salary_display_from`, `salary_display_to` - salary range.
+- `salary_taxes` - `net` or `gross`.
+- `salary_is_total` - whether compensation is total.
+- `type` - `only_web` or `web_and_tg`.
+
+Optional fields:
+- `location_requirements` - array of objects like `{"location_raw": "<location text>"}`.
+- `salary_currency` - `rub` / `usd` / `eur` (`₽`, `$`, `€` are also accepted).
+- `salary_hidden`, `cover_letter_required`, `cover_letter_placeholder`.
+- `language`, `description`, `required_years_of_experience`.
+- `location_validation`, `auto_prolong`.
+
+For `PATCH`, send only the changed fields inside `payload` (partial update).
+
+#### 4.4.2. Draft lifecycle
+
+- `new` - technical initial status.
+- `filling` - system auto-fills fields.
+- `validating` - required fields and content checks are running.
+- `rejected` - validation errors found (see `errors`).
+- `validated` - draft is ready for publication.
+- `publishing` - publication command is queued.
+- `accepted` - final vacancy created, `vacancy_id` is set.
+
+Rules:
+- editing (`PATCH`) is allowed only for `new`, `rejected`, `validated`;
+- publishing (`/publish`) is allowed only for `validated` and `vacancy_id = null`;
+- deletion is forbidden if status is `accepted` or `vacancy_id` is already set.
+
+#### 4.4.3. Validation errors
+
+`errors` is an array of objects:
+- `code` - error type (`required_field`, `max_length`, `content_policy`, `invalid_format`, `bad_words`, `other`);
+- `justification` - human-readable message;
+- `field_name` - field with the issue (for example, `description`, `location_requirements[0].format`).
+
+### 4.5. Applications
 
 1. `GET /negotiations?vacancy_id=<vacancy_id>`
 Purpose: get vacancy application collections (status counters).
@@ -118,7 +180,7 @@ Supported `collection_name` values:
 Purpose: get a candidate resume/profile from an application.
 Important: this request may affect contact reveal limits.
 
-### 4.5. Candidate Profiles
+### 4.6. Candidate Profiles
 
 1. `GET /profiles/get_profile/a/{hash_id}`
 Purpose: get a candidate profile by application ID.
@@ -126,7 +188,103 @@ Purpose: get a candidate profile by application ID.
 2. `GET /profiles/get_profile/dp/{hash_id}`
 Purpose: get a candidate profile by digest candidate ID.
 
-## 5. Request Example
+## 5. Usage Examples: Vacancy Drafts
+
+### 5.1. Create a draft
+
+```bash
+curl --request POST \
+  --url "https://getmatch.ru/api/integrations/v1/employers/<company_id>/vacancies/drafts" \
+  --header "Authorization: Bearer <access_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "payload": {
+      "position": "Senior Python Developer",
+      "location_requirements": [{"location_raw": "Belgrade"}],
+      "salary_display_from": 5000,
+      "salary_display_to": 7000,
+      "salary_currency": "eur",
+      "salary_taxes": "gross",
+      "salary_is_total": false,
+      "type": "web_and_tg",
+      "language": "eng",
+      "description": "We are looking for a Senior Python engineer..."
+    }
+  }'
+```
+
+Response example (fragment):
+```json
+{
+  "id": 14567,
+  "status": "filling",
+  "errors": null,
+  "recruiter_id": 101,
+  "company_id": 202,
+  "vacancy_id": null,
+  "created_at": "2026-03-05T10:15:30.123456",
+  "updated_at": "2026-03-05T10:15:30.123456"
+}
+```
+
+### 5.2. Check draft status
+
+```bash
+curl --request GET \
+  --url "https://getmatch.ru/api/integrations/v1/employers/<company_id>/vacancies/drafts/14567" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+If draft is rejected:
+```json
+{
+  "id": 14567,
+  "status": "rejected",
+  "errors": [
+    {
+      "code": "required_field",
+      "justification": "Add vacancy description",
+      "field_name": "description"
+    }
+  ]
+}
+```
+`justification` text may vary depending on validation rules and localization.
+
+### 5.3. Fix a rejected draft
+
+```bash
+curl --request PATCH \
+  --url "https://getmatch.ru/api/integrations/v1/employers/<company_id>/vacancies/drafts/14567" \
+  --header "Authorization: Bearer <access_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "payload": {
+      "description": "Full vacancy description with responsibilities and requirements"
+    }
+  }'
+```
+
+After `PATCH`, the draft goes through `filling -> validating -> rejected|validated` again.
+
+### 5.4. Publish a validated draft
+
+```bash
+curl --request POST \
+  --url "https://getmatch.ru/api/integrations/v1/employers/<company_id>/vacancies/drafts/14567/publish" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Response:
+```json
+{"status":"queued"}
+```
+
+Then poll `GET /employers/{company_id}/vacancies/drafts/{draft_id}`:
+- while in progress: `status = "publishing"`;
+- when done: `status = "accepted"` and `vacancy_id` is filled.
+
+## 6. Basic Request Example
 
 ```bash
 curl --request GET \
@@ -135,11 +293,14 @@ curl --request GET \
   --header "Content-Type: application/json"
 ```
 
-## 6. Common Response Codes
+## 7. Common Response Codes
 
+- `204 No Content` - successful deletion
 - `200 OK` - successful request
 - `400 Bad Request` - invalid parameters
 - `401 Unauthorized` - missing/invalid/expired token
 - `402 Payment Required` - contact reveal limit exceeded
 - `404 Not Found` - object not found or unavailable
+- `409 Conflict` - draft status conflict (for example, publishing a non-validated draft)
+- `422 Unprocessable Entity` - request payload schema error
 - `429 Too Many Requests` - daily API limit exceeded
