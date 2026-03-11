@@ -188,6 +188,44 @@ Purpose: get a candidate profile by application ID.
 2. `GET /profiles/get_profile/dp/{hash_id}`
 Purpose: get a candidate profile by digest candidate ID.
 
+### 4.7. Application Webhooks
+
+1. `GET /webhooks/applications`
+Purpose: get the current applications webhook URL for the company.
+Response: `{"url": "<webhook_url>|null"}`.
+
+2. `PUT /webhooks/applications`
+Purpose: set/update the applications webhook URL for the company.
+Payload:
+- `url` - a valid HTTP/HTTPS URL.
+- `url: null` - disable webhooks.
+Response: `{"url": "<webhook_url>|null"}`.
+
+Rules:
+- one applications webhook URL is supported per company;
+- update affects only the current authorized recruiter's company.
+
+#### 4.7.1. Outgoing webhook events
+
+After URL is configured, getmatch sends `POST` requests with JSON payload to this endpoint.
+
+Supported `event` values:
+- `application_created` - a new application is sent to the employer for the first time;
+- `application_status_changed` - application state has changed.
+
+Important:
+- `application_created` webhook is sent only once per application;
+- `application_status_changed` is sent only on an actual state change.
+
+`state` field in payload:
+- `id` - system status: `pending`, `in_progress`, `rejected`, `hired`;
+- `name` - human-readable status name (currently returned in Russian).
+
+`application.id` is the application hash_id (the same ID used in `GET /applications/{candidate_id}`).
+
+Contacts and personal data depend on contacts visibility:
+- if contacts are not yet revealed, `contact` may be empty, and `last_name`/`birth_date` may be `null`.
+
 ## 5. Usage Examples: Vacancy Drafts
 
 ### 5.1. Create a draft
@@ -283,6 +321,97 @@ Response:
 Then poll `GET /employers/{company_id}/vacancies/drafts/{draft_id}`:
 - while in progress: `status = "publishing"`;
 - when done: `status = "accepted"` and `vacancy_id` is filled.
+
+### 5.5. Configure applications webhook
+
+```bash
+curl --request PUT \
+  --url "https://getmatch.ru/api/integrations/v1/webhooks/applications" \
+  --header "Authorization: Bearer <access_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "url": "https://example.com/getmatch/webhooks/applications"
+  }'
+```
+
+Response:
+```json
+{"url":"https://example.com/getmatch/webhooks/applications"}
+```
+
+Disable webhook:
+```bash
+curl --request PUT \
+  --url "https://getmatch.ru/api/integrations/v1/webhooks/applications" \
+  --header "Authorization: Bearer <access_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "url": null
+  }'
+```
+
+### 5.6. Incoming application webhook payload example
+
+```json
+{
+  "event": "application_status_changed",
+  "vacancy_hash_id": "k0N5LqA4",
+  "state": {
+    "id": "in_progress",
+    "name": "В работе"
+  },
+  "application": {
+    "id": "pQ2M8Zx1",
+    "first_name": "Ivan",
+    "last_name": "Ivanov",
+    "age": 29,
+    "birth_date": "1996-04-12",
+    "area": {
+      "name": "Belgrade"
+    },
+    "cover_letter": "Happy to discuss this role",
+    "contact": [
+      {
+        "contact_value": "candidate@example.com",
+        "type": {
+          "id": "email"
+        }
+      },
+      {
+        "contact_value": "@candidate",
+        "type": {
+          "id": "telegram"
+        }
+      }
+    ],
+    "skill_set": [
+      "Python",
+      "FastAPI"
+    ],
+    "education": {
+      "primary": [
+        {
+          "name": "SPbU",
+          "organization": "Computer Science",
+          "result": "Bachelor",
+          "year": 2018
+        }
+      ]
+    },
+    "experience": [
+      {
+        "company": "Example LLC",
+        "position": "Backend Developer",
+        "description": "API development and support",
+        "start": "2021-05",
+        "end": "2024-02"
+      }
+    ],
+    "created_at": "2025-11-10T09:15:00+0000",
+    "updated_at": "2026-03-10T12:45:30+0000"
+  }
+}
+```
 
 ## 6. Basic Request Example
 
