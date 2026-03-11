@@ -191,6 +191,44 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 2. `GET /profiles/get_profile/dp/{hash_id}`
 Назначение: получить профиль кандидата по ID кандидата из подборки (digest candidate).
 
+### 4.7. Вебхуки откликов
+
+1. `GET /webhooks/applications`
+Назначение: получить текущий URL вебхука откликов для компании.
+Ответ: `{"url": "<webhook_url>|null"}`.
+
+2. `PUT /webhooks/applications`
+Назначение: установить/обновить URL вебхука откликов для компании.
+Payload:
+- `url` - валидный HTTP/HTTPS URL.
+- `url: null` - отключить вебхук.
+Ответ: `{"url": "<webhook_url>|null"}`.
+
+Правила:
+- у компании поддерживается один URL вебхука откликов;
+- изменение затрагивает только компанию текущего авторизованного рекрутера.
+
+#### 4.7.1. Исходящие события вебхука
+
+После настройки URL getmatch отправляет `POST` с JSON payload на указанный endpoint.
+
+Поддерживаемые `event`:
+- `application_created` - новый отклик впервые отправлен работодателю;
+- `application_status_changed` - изменилось состояние отклика.
+
+Важно:
+- webhook `application_created` отправляется только один раз на отклик;
+- `application_status_changed` отправляется только при фактическом изменении состояния.
+
+Поле `state` в payload:
+- `id` - системный статус: `pending`, `in_progress`, `rejected`, `hired`;
+- `name` - человекочитаемое название статуса.
+
+Поле `application.id` — hash_id отклика (используется также в `GET /applications/{candidate_id}`).
+
+Контакты и персональные данные в payload зависят от доступности контактов:
+- если контакты еще не раскрыты, `contact` может быть пустым, `last_name` и `birth_date` могут быть `null`.
+
 ## 5. Примеры использования: черновики вакансий
 
 ### 5.1. Создать черновик
@@ -285,6 +323,97 @@ curl --request POST \
 Дальше опрашивайте `GET /employers/{company_id}/vacancies/drafts/{draft_id}`:
 - пока идет публикация: `status = "publishing"`;
 - после успеха: `status = "accepted"` и заполнен `vacancy_id`.
+
+### 5.5. Настроить вебхук откликов
+
+```bash
+curl --request PUT \
+  --url "https://getmatch.ru/api/integrations/v1/webhooks/applications" \
+  --header "Authorization: Bearer <access_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "url": "https://example.com/getmatch/webhooks/applications"
+  }'
+```
+
+Ответ:
+```json
+{"url":"https://example.com/getmatch/webhooks/applications"}
+```
+
+Отключить вебхук:
+```bash
+curl --request PUT \
+  --url "https://getmatch.ru/api/integrations/v1/webhooks/applications" \
+  --header "Authorization: Bearer <access_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "url": null
+  }'
+```
+
+### 5.6. Пример payload входящего вебхука отклика
+
+```json
+{
+  "event": "application_status_changed",
+  "vacancy_hash_id": "k0N5LqA4",
+  "state": {
+    "id": "in_progress",
+    "name": "В работе"
+  },
+  "application": {
+    "id": "pQ2M8Zx1",
+    "first_name": "Иван",
+    "last_name": "Иванов",
+    "age": 29,
+    "birth_date": "1996-04-12",
+    "area": {
+      "name": "Белград"
+    },
+    "cover_letter": "Буду рад обсудить вакансию",
+    "contact": [
+      {
+        "contact_value": "candidate@example.com",
+        "type": {
+          "id": "email"
+        }
+      },
+      {
+        "contact_value": "@candidate",
+        "type": {
+          "id": "telegram"
+        }
+      }
+    ],
+    "skill_set": [
+      "Python",
+      "FastAPI"
+    ],
+    "education": {
+      "primary": [
+        {
+          "name": "СПбГУ",
+          "organization": "Computer Science",
+          "result": "Bachelor",
+          "year": 2018
+        }
+      ]
+    },
+    "experience": [
+      {
+        "company": "Example LLC",
+        "position": "Backend Developer",
+        "description": "Разработка и поддержка API",
+        "start": "2021-05",
+        "end": "2024-02"
+      }
+    ],
+    "created_at": "2025-11-10T09:15:00+0000",
+    "updated_at": "2026-03-10T12:45:30+0000"
+  }
+}
+```
 
 ## 6. Базовый пример запроса
 
