@@ -183,6 +183,34 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 Назначение: получить резюме/профиль кандидата из отклика.
 Важно: запрос может влиять на лимиты раскрытия контактов.
 
+4. `POST /applications/{candidate_id}`
+Назначение: рассмотреть отклик (одобрить или отклонить).
+Payload:
+- `resolution` - обязательное поле: `approve` или `reject`.
+- `reason` - опциональный текст причины отказа.
+- `forward_reason` - опциональный флаг, пересылать ли `reason` кандидату.
+Ответ:
+- `id` - hash_id отклика.
+- `state.id` - итоговый статус (`pending`, `in_progress`, `rejected`, `hired`).
+- `state.name` - человекочитаемое название статуса.
+- `updated_at` - время последнего изменения статуса.
+
+5. `PUT /applications/{candidate_id}`
+Назначение: обновить клиентский статус отклика.
+Payload:
+- `client_status` - одно из значений: `pending`, `in_progress`, `rejected`, `hired`.
+Ответ:
+- `id` - hash_id отклика.
+- `state.id` - итоговый статус (`pending`, `in_progress`, `rejected`, `hired`).
+- `state.name` - человекочитаемое название статуса.
+- `updated_at` - время последнего изменения статуса.
+
+Правила для управления откликами:
+- `candidate_id` — это hash_id отклика (берется из `GET /negotiations/...` или `GET /applications/{candidate_id}`);
+- перевод в `hired` считается финальным: вернуть отклик из `hired` в другой статус нельзя;
+- сброс в `pending` запрещен, если кандидат уже получил уведомление о решении;
+- изменение статуса доступно только рекрутеру-владельцу вакансии (или администратору компании);
+
 ### 4.6. Профили кандидатов
 
 1. `GET /profiles/get_profile/a/{hash_id}`
@@ -415,6 +443,56 @@ curl --request PUT \
 }
 ```
 
+### 5.7. Отклонить отклик с причиной
+
+```bash
+curl --request POST \
+  --url "https://getmatch.ru/api/integrations/v1/applications/<candidate_id>" \
+  --header "Authorization: Bearer <access_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "resolution": "reject",
+    "reason": "Недостаточно релевантного опыта",
+    "forward_reason": true
+  }'
+```
+
+Ответ:
+```json
+{
+  "id": "pQ2M8Zx1",
+  "state": {
+    "id": "rejected",
+    "name": "Отказ"
+  },
+  "updated_at": "2026-03-12T08:40:00+0000"
+}
+```
+
+### 5.8. Обновить статус отклика на hired
+
+```bash
+curl --request PUT \
+  --url "https://getmatch.ru/api/integrations/v1/applications/<candidate_id>" \
+  --header "Authorization: Bearer <access_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "client_status": "hired"
+  }'
+```
+
+Ответ:
+```json
+{
+  "id": "pQ2M8Zx1",
+  "state": {
+    "id": "hired",
+    "name": "Нанят"
+  },
+  "updated_at": "2026-03-12T08:45:00+0000"
+}
+```
+
 ## 6. Базовый пример запроса
 
 ```bash
@@ -432,6 +510,7 @@ curl --request GET \
 - `401 Unauthorized` - отсутствует/некорректный/просроченный токен
 - `402 Payment Required` - превышен лимит на раскрытие контактов
 - `404 Not Found` - объект не найден или недоступен
+- `405 Method Not Allowed` - операция недоступна для текущего рекрутера
 - `409 Conflict` - конфликт статуса черновика (например, публикация невалидного черновика)
 - `422 Unprocessable Entity` - ошибка схемы входных данных
 - `429 Too Many Requests` - превышен дневной лимит API
