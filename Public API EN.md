@@ -180,6 +180,34 @@ Supported `collection_name` values:
 Purpose: get a candidate resume/profile from an application.
 Important: this request may affect contact reveal limits.
 
+4. `POST /applications/{candidate_id}`
+Purpose: review an application (approve or reject).
+Payload:
+- `resolution` - required: `approve` or `reject`.
+- `reason` - optional reject reason text.
+- `forward_reason` - optional flag: whether to send `reason` to the candidate.
+Response:
+- `id` - application hash_id.
+- `state.id` - resulting status (`pending`, `in_progress`, `rejected`, `hired`).
+- `state.name` - human-readable status label.
+- `updated_at` - timestamp of the latest status update.
+
+5. `PUT /applications/{candidate_id}`
+Purpose: update application client status.
+Payload:
+- `client_status` - one of: `pending`, `in_progress`, `rejected`, `hired`.
+Response:
+- `id` - application hash_id.
+- `state.id` - resulting status (`pending`, `in_progress`, `rejected`, `hired`).
+- `state.name` - human-readable status label.
+- `updated_at` - timestamp of the latest status update.
+
+Rules for application management:
+- `candidate_id` is the application hash_id (from `GET /negotiations/...` or `GET /applications/{candidate_id}`);
+- `hired` is a final status: it cannot be changed back to another status;
+- reset to `pending` is forbidden if the candidate has already been notified about a resolution;
+- status update is allowed only for the vacancy owner recruiter (or a company admin);
+
 ### 4.6. Candidate Profiles
 
 1. `GET /profiles/get_profile/a/{hash_id}`
@@ -413,6 +441,56 @@ curl --request PUT \
 }
 ```
 
+### 5.7. Reject an application with reason
+
+```bash
+curl --request POST \
+  --url "https://getmatch.ru/api/integrations/v1/applications/<candidate_id>" \
+  --header "Authorization: Bearer <access_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "resolution": "reject",
+    "reason": "Insufficient relevant experience",
+    "forward_reason": true
+  }'
+```
+
+Response:
+```json
+{
+  "id": "pQ2M8Zx1",
+  "state": {
+    "id": "rejected",
+    "name": "Отказ"
+  },
+  "updated_at": "2026-03-12T08:40:00+0000"
+}
+```
+
+### 5.8. Set application status to hired
+
+```bash
+curl --request PUT \
+  --url "https://getmatch.ru/api/integrations/v1/applications/<candidate_id>" \
+  --header "Authorization: Bearer <access_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "client_status": "hired"
+  }'
+```
+
+Response:
+```json
+{
+  "id": "pQ2M8Zx1",
+  "state": {
+    "id": "hired",
+    "name": "Нанят"
+  },
+  "updated_at": "2026-03-12T08:45:00+0000"
+}
+```
+
 ## 6. Basic Request Example
 
 ```bash
@@ -430,6 +508,7 @@ curl --request GET \
 - `401 Unauthorized` - missing/invalid/expired token
 - `402 Payment Required` - contact reveal limit exceeded
 - `404 Not Found` - object not found or unavailable
+- `405 Method Not Allowed` - operation is not allowed for the current recruiter
 - `409 Conflict` - draft status conflict (for example, publishing a non-validated draft)
 - `422 Unprocessable Entity` - request payload schema error
 - `429 Too Many Requests` - daily API limit exceeded
