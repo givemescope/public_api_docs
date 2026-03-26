@@ -103,6 +103,13 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 - `page` - номер страницы, начиная с `0`.
 - `per_page` - размер страницы (`1..200`).
 
+3. `POST /employers/{company_id}/vacancies/{vacancy_id}/archive`
+Назначение: снять вакансию с публикации.
+Параметры:
+- `company_id` - ID компании (можно получить в `/me`).
+- `vacancy_id` - hash ID вакансии из `GET /vacancies/` или `GET /employers/{company_id}/vacancies/active`.
+Успешный ответ: `{}`.
+
 ### 4.4. Черновики вакансий
 
 1. `POST /employers/{company_id}/vacancies/drafts`  
@@ -181,7 +188,11 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 
 3. `GET /applications/{candidate_id}`
 Назначение: получить резюме/профиль кандидата из отклика.
-Важно: запрос может влиять на лимиты раскрытия контактов.
+Параметры query:
+- `open_contacts` - опциональный boolean-флаг, по умолчанию `false`.
+Правила:
+- по умолчанию отклик возвращается в закрытом виде: `contact` пустой, `last_name` и `birth_date` равны `null`;
+- если передан `open_contacts=true`, API попытается раскрыть контакты и тогда запрос может повлиять на лимиты раскрытия контактов.
 
 4. `POST /applications/{candidate_id}`
 Назначение: рассмотреть отклик (одобрить или отклонить).
@@ -223,14 +234,19 @@ Payload:
 
 1. `GET /webhooks/applications`
 Назначение: получить текущий URL вебхука откликов для компании.
-Ответ: `{"url": "<webhook_url>|null"}`.
+Ответ:
+- `url` - текущий URL вебхука или `null`;
+- `include_contacts` - должен ли webhook присылать отклик с контактами.
 
 2. `PUT /webhooks/applications`
 Назначение: установить/обновить URL вебхука откликов для компании.
 Payload:
 - `url` - валидный HTTP/HTTPS URL.
+- `include_contacts` - boolean-флаг, должен ли webhook присылать отклики с раскрытыми контактами.
 - `url: null` - отключить вебхук.
-Ответ: `{"url": "<webhook_url>|null"}`.
+Ответ:
+- `url` - текущий URL вебхука или `null`;
+- `include_contacts` - текущее значение настройки раскрытия контактов для webhook.
 
 Правила:
 - у компании поддерживается один URL вебхука откликов;
@@ -255,7 +271,8 @@ Payload:
 Поле `application.id` — hash_id отклика (используется также в `GET /applications/{candidate_id}`).
 
 Контакты и персональные данные в payload зависят от доступности контактов:
-- если контакты еще не раскрыты, `contact` может быть пустым, `last_name` и `birth_date` могут быть `null`.
+- если в настройке webhook указано `include_contacts=false`, `contact` будет пустым, `last_name` и `birth_date` будут `null`;
+- если в настройке webhook указано `include_contacts=true`, webhook возвращает отклик с контактами независимо от текущего внутреннего статуса раскрытия.
 
 ## 5. Примеры использования: черновики вакансий
 
@@ -352,7 +369,20 @@ curl --request POST \
 - пока идет публикация: `status = "publishing"`;
 - после успеха: `status = "accepted"` и заполнен `vacancy_id`.
 
-### 5.5. Настроить вебхук откликов
+### 5.5. Снять вакансию с публикации
+
+```bash
+curl --request POST \
+  --url "https://getmatch.ru/api/integrations/v1/employers/<company_id>/vacancies/<vacancy_id>/archive" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Ответ:
+```json
+{}
+```
+
+### 5.6. Настроить вебхук откликов
 
 ```bash
 curl --request PUT \
@@ -360,13 +390,17 @@ curl --request PUT \
   --header "Authorization: Bearer <access_token>" \
   --header "Content-Type: application/json" \
   --data '{
-    "url": "https://example.com/getmatch/webhooks/applications"
+    "url": "https://example.com/getmatch/webhooks/applications",
+    "include_contacts": false
   }'
 ```
 
 Ответ:
 ```json
-{"url":"https://example.com/getmatch/webhooks/applications"}
+{
+  "url": "https://example.com/getmatch/webhooks/applications",
+  "include_contacts": false
+}
 ```
 
 Отключить вебхук:
@@ -376,11 +410,77 @@ curl --request PUT \
   --header "Authorization: Bearer <access_token>" \
   --header "Content-Type: application/json" \
   --data '{
-    "url": null
+    "url": null,
+    "include_contacts": false
   }'
 ```
 
-### 5.6. Пример payload входящего вебхука отклика
+Получить текущую настройку:
+```bash
+curl --request GET \
+  --url "https://getmatch.ru/api/integrations/v1/webhooks/applications" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Ответ:
+```json
+{
+  "url": "https://example.com/getmatch/webhooks/applications",
+  "include_contacts": false
+}
+```
+
+### 5.7. Пример payload входящего вебхука отклика без контактов
+
+```json
+{
+  "event": "application_status_changed",
+  "vacancy_hash_id": "k0N5LqA4",
+  "state": {
+    "id": "in_progress",
+    "name": "В работе"
+  },
+  "application": {
+    "id": "pQ2M8Zx1",
+    "first_name": "Иван",
+    "last_name": null,
+    "age": 29,
+    "birth_date": null,
+    "area": {
+      "name": "Белград"
+    },
+    "cover_letter": "Буду рад обсудить вакансию",
+    "contact": [],
+    "skill_set": [
+      "Python",
+      "FastAPI"
+    ],
+    "education": {
+      "primary": [
+        {
+          "name": "СПбГУ",
+          "organization": "Computer Science",
+          "result": "Bachelor",
+          "year": 2018
+        }
+      ]
+    },
+    "experience": [
+      {
+        "company": "Example LLC",
+        "position": "Backend Developer",
+        "description": "Разработка и поддержка API",
+        "start": "2021-05",
+        "end": "2024-02"
+      }
+    ],
+    "created_at": "2025-11-10T09:15:00+0000",
+    "updated_at": "2026-03-10T12:45:30+0000"
+  }
+}
+```
+
+### 5.8. Пример payload входящего вебхука отклика с контактами
 
 ```json
 {
@@ -443,7 +543,39 @@ curl --request PUT \
 }
 ```
 
-### 5.7. Отклонить отклик с причиной
+### 5.9. Получить отклик без контактов (поведение по умолчанию)
+
+```bash
+curl --request GET \
+  --url "https://getmatch.ru/api/integrations/v1/applications/<candidate_id>" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Пример ответа:
+```json
+{
+  "id": "pQ2M8Zx1",
+  "first_name": "Иван",
+  "last_name": null,
+  "birth_date": null,
+  "contact": [],
+  "cover_letter": "Буду рад обсудить вакансию"
+}
+```
+
+### 5.10. Получить отклик с раскрытием контактов
+
+```bash
+curl --request GET \
+  --url "https://getmatch.ru/api/integrations/v1/applications/<candidate_id>?open_contacts=true" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Важно:
+- этот запрос пытается раскрыть контакты;
+- при успешном раскрытии может быть списан лимит раскрытия контактов.
+
+### 5.11. Отклонить отклик с причиной
 
 ```bash
 curl --request POST \
@@ -469,7 +601,7 @@ curl --request POST \
 }
 ```
 
-### 5.8. Обновить статус отклика на hired
+### 5.12. Обновить статус отклика на hired
 
 ```bash
 curl --request PUT \
