@@ -100,6 +100,13 @@ Parameters:
 - `page` - page number, starting from `0`.
 - `per_page` - page size (`1..200`).
 
+3. `POST /employers/{company_id}/vacancies/{vacancy_id}/archive`
+Purpose: unpublish a vacancy.
+Parameters:
+- `company_id` - company ID (can be obtained from `/me`).
+- `vacancy_id` - vacancy hash ID from `GET /vacancies/` or `GET /employers/{company_id}/vacancies/active`.
+Successful response: `{}`.
+
 ### 4.4. Vacancy Drafts
 
 1. `POST /employers/{company_id}/vacancies/drafts`  
@@ -178,7 +185,11 @@ Supported `collection_name` values:
 
 3. `GET /applications/{candidate_id}`
 Purpose: get a candidate resume/profile from an application.
-Important: this request may affect contact reveal limits.
+Query parameters:
+- `open_contacts` - optional boolean flag, defaults to `false`.
+Rules:
+- by default the application is returned in closed form: `contact` is empty, `last_name` and `birth_date` are `null`;
+- if `open_contacts=true` is passed, the API will try to reveal contacts and the request may affect contact reveal limits.
 
 4. `POST /applications/{candidate_id}`
 Purpose: review an application (approve or reject).
@@ -220,14 +231,19 @@ Purpose: get a candidate profile by digest candidate ID.
 
 1. `GET /webhooks/applications`
 Purpose: get the current applications webhook URL for the company.
-Response: `{"url": "<webhook_url>|null"}`.
+Response:
+- `url` - current webhook URL or `null`;
+- `include_contacts` - whether webhook payloads should include revealed contacts.
 
 2. `PUT /webhooks/applications`
 Purpose: set/update the applications webhook URL for the company.
 Payload:
 - `url` - a valid HTTP/HTTPS URL.
+- `include_contacts` - boolean flag that controls whether webhook payloads include contacts.
 - `url: null` - disable webhooks.
-Response: `{"url": "<webhook_url>|null"}`.
+Response:
+- `url` - current webhook URL or `null`;
+- `include_contacts` - current webhook contact visibility setting.
 
 Rules:
 - one applications webhook URL is supported per company;
@@ -252,7 +268,8 @@ Important:
 `application.id` is the application hash_id (the same ID used in `GET /applications/{candidate_id}`).
 
 Contacts and personal data depend on contacts visibility:
-- if contacts are not yet revealed, `contact` may be empty, and `last_name`/`birth_date` may be `null`.
+- if webhook setting `include_contacts=false`, `contact` is empty and `last_name`/`birth_date` are `null`;
+- if webhook setting `include_contacts=true`, webhook payloads include contacts regardless of the internal contact visibility state of the application.
 
 ## 5. Usage Examples: Vacancy Drafts
 
@@ -350,7 +367,20 @@ Then poll `GET /employers/{company_id}/vacancies/drafts/{draft_id}`:
 - while in progress: `status = "publishing"`;
 - when done: `status = "accepted"` and `vacancy_id` is filled.
 
-### 5.5. Configure applications webhook
+### 5.5. Unpublish a vacancy
+
+```bash
+curl --request POST \
+  --url "https://getmatch.ru/api/integrations/v1/employers/<company_id>/vacancies/<vacancy_id>/archive" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Response:
+```json
+{}
+```
+
+### 5.6. Configure applications webhook
 
 ```bash
 curl --request PUT \
@@ -358,13 +388,17 @@ curl --request PUT \
   --header "Authorization: Bearer <access_token>" \
   --header "Content-Type: application/json" \
   --data '{
-    "url": "https://example.com/getmatch/webhooks/applications"
+    "url": "https://example.com/getmatch/webhooks/applications",
+    "include_contacts": false
   }'
 ```
 
 Response:
 ```json
-{"url":"https://example.com/getmatch/webhooks/applications"}
+{
+  "url": "https://example.com/getmatch/webhooks/applications",
+  "include_contacts": false
+}
 ```
 
 Disable webhook:
@@ -374,11 +408,77 @@ curl --request PUT \
   --header "Authorization: Bearer <access_token>" \
   --header "Content-Type: application/json" \
   --data '{
-    "url": null
+    "url": null,
+    "include_contacts": false
   }'
 ```
 
-### 5.6. Incoming application webhook payload example
+Get current webhook settings:
+```bash
+curl --request GET \
+  --url "https://getmatch.ru/api/integrations/v1/webhooks/applications" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Response:
+```json
+{
+  "url": "https://example.com/getmatch/webhooks/applications",
+  "include_contacts": false
+}
+```
+
+### 5.7. Incoming application webhook payload example without contacts
+
+```json
+{
+  "event": "application_status_changed",
+  "vacancy_hash_id": "k0N5LqA4",
+  "state": {
+    "id": "in_progress",
+    "name": "В работе"
+  },
+  "application": {
+    "id": "pQ2M8Zx1",
+    "first_name": "Ivan",
+    "last_name": null,
+    "age": 29,
+    "birth_date": null,
+    "area": {
+      "name": "Belgrade"
+    },
+    "cover_letter": "Happy to discuss this role",
+    "contact": [],
+    "skill_set": [
+      "Python",
+      "FastAPI"
+    ],
+    "education": {
+      "primary": [
+        {
+          "name": "SPbU",
+          "organization": "Computer Science",
+          "result": "Bachelor",
+          "year": 2018
+        }
+      ]
+    },
+    "experience": [
+      {
+        "company": "Example LLC",
+        "position": "Backend Developer",
+        "description": "API development and support",
+        "start": "2021-05",
+        "end": "2024-02"
+      }
+    ],
+    "created_at": "2025-11-10T09:15:00+0000",
+    "updated_at": "2026-03-10T12:45:30+0000"
+  }
+}
+```
+
+### 5.8. Incoming application webhook payload example with contacts
 
 ```json
 {
@@ -441,7 +541,39 @@ curl --request PUT \
 }
 ```
 
-### 5.7. Reject an application with reason
+### 5.9. Get an application without contacts (default behavior)
+
+```bash
+curl --request GET \
+  --url "https://getmatch.ru/api/integrations/v1/applications/<candidate_id>" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Response example:
+```json
+{
+  "id": "pQ2M8Zx1",
+  "first_name": "Ivan",
+  "last_name": null,
+  "birth_date": null,
+  "contact": [],
+  "cover_letter": "Happy to discuss this role"
+}
+```
+
+### 5.10. Get an application and reveal contacts
+
+```bash
+curl --request GET \
+  --url "https://getmatch.ru/api/integrations/v1/applications/<candidate_id>?open_contacts=true" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Important:
+- this request attempts to reveal contacts;
+- on success it may consume contact reveal limits.
+
+### 5.11. Reject an application with reason
 
 ```bash
 curl --request POST \
@@ -467,7 +599,7 @@ Response:
 }
 ```
 
-### 5.8. Set application status to hired
+### 5.12. Set application status to hired
 
 ```bash
 curl --request PUT \
