@@ -81,6 +81,15 @@ Below are the Public API endpoints (`/api/integrations/v1/...`).
 1. `GET /me`
 Purpose: get information about the currently authorized recruiter and their company.
 
+2. `GET /employers/{company_id}/recruiters?q=<query>&limit=<int>`
+Purpose: search recruiters of the current company by first name, last name, or email.
+Parameters:
+- `company_id` - company ID (can be obtained from `/me`).
+- `q` - search string, matched against `first_name`, `last_name`, and `email`.
+- `limit` - maximum number of results (`1..100`, default `20`).
+Response:
+- an array of recruiters with fields `id`, `first_name`, `last_name`, `email`.
+
 ### 4.2. API Limits
 
 1. `GET /limits/get`
@@ -111,16 +120,17 @@ Successful response: `{}`.
 
 1. `POST /employers/{company_id}/vacancies/drafts`  
 Purpose: create a vacancy draft and submit it for validation.
+Additionally: you may pass `recruiter_id` to assign the draft to another recruiter from the same company.
 
 2. `GET /employers/{company_id}/vacancies/drafts`  
-Purpose: get drafts of the current recruiter (sorted by `updated_at DESC`).  
+Purpose: get company drafts (sorted by `updated_at DESC`).  
 Important: drafts with `accepted` status are not included in this list.
 
 3. `GET /employers/{company_id}/vacancies/drafts/{draft_id}`  
-Purpose: get a draft by ID.
+Purpose: get a company draft by ID.
 
 4. `PATCH /employers/{company_id}/vacancies/drafts/{draft_id}`  
-Purpose: partially update a draft and re-submit it for validation.
+Purpose: partially update a draft, optionally change `recruiter_id`, and re-submit it for validation.
 
 5. `POST /employers/{company_id}/vacancies/drafts/{draft_id}/publish`  
 Purpose: queue a validated draft for publication.  
@@ -130,6 +140,11 @@ Successful response: `{"status": "queued"}`.
 Purpose: delete a draft (if it is not linked to a final vacancy yet).
 
 #### 4.4.1. payload fields for create/update
+
+Additional top-level field for `POST` and `PATCH`:
+- `recruiter_id` - optional recruiter ID within the current company. If omitted:
+  - on `POST`, the draft is assigned to the current authorized recruiter;
+  - on `PATCH`, the current draft `recruiter_id` is preserved.
 
 Required for `POST`:
 - `position` - vacancy title.
@@ -161,6 +176,8 @@ Rules:
 - editing (`PATCH`) is allowed only for `new`, `rejected`, `validated`;
 - publishing (`/publish`) is allowed only for `validated` and `vacancy_id = null`;
 - deletion is forbidden if status is `accepted` or `vacancy_id` is already set.
+- all draft operations are available to any recruiter of the current company;
+- `recruiter_id` can only be changed to an active recruiter from the same company.
 
 #### 4.4.3. Validation errors
 
@@ -281,6 +298,7 @@ curl --request POST \
   --header "Authorization: Bearer <access_token>" \
   --header "Content-Type: application/json" \
   --data '{
+    "recruiter_id": 101,
     "payload": {
       "position": "Senior Python Developer",
       "location_requirements": [{"location_raw": "Belgrade"}],
@@ -342,6 +360,7 @@ curl --request PATCH \
   --header "Authorization: Bearer <access_token>" \
   --header "Content-Type: application/json" \
   --data '{
+    "recruiter_id": 115,
     "payload": {
       "description": "Full vacancy description with responsibilities and requirements"
     }
