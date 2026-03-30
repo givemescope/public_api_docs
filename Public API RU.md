@@ -84,6 +84,15 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 1. `GET /me`
 Назначение: получить информацию о текущем авторизованном рекрутере и его компании.
 
+2. `GET /employers/{company_id}/recruiters?q=<query>&limit=<int>`
+Назначение: найти рекрутеров текущей компании по имени, фамилии или email.
+Параметры:
+- `company_id` - ID компании (можно получить в `/me`).
+- `q` - поисковая строка, поиск выполняется по `first_name`, `last_name`, `email`.
+- `limit` - максимальное число результатов (`1..100`, по умолчанию `20`).
+Ответ:
+- массив рекрутеров с полями `id`, `first_name`, `last_name`, `email`.
+
 ### 4.2. Лимиты API
 
 1. `GET /limits/get`
@@ -114,16 +123,17 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 
 1. `POST /employers/{company_id}/vacancies/drafts`  
 Назначение: создать черновик вакансии и отправить его на валидацию.
+Дополнительно: можно передать `recruiter_id`, чтобы сразу назначить черновик на другого рекрутера этой же компании.
 
 2. `GET /employers/{company_id}/vacancies/drafts`  
-Назначение: получить список черновиков текущего рекрутера (отсортированы по `updated_at DESC`).  
+Назначение: получить список черновиков компании (отсортированы по `updated_at DESC`).  
 Важно: черновики в статусе `accepted` в этот список не попадают.
 
 3. `GET /employers/{company_id}/vacancies/drafts/{draft_id}`  
-Назначение: получить один черновик по ID.
+Назначение: получить один черновик компании по ID.
 
 4. `PATCH /employers/{company_id}/vacancies/drafts/{draft_id}`  
-Назначение: частично обновить черновик и повторно отправить его на валидацию.
+Назначение: частично обновить черновик, при необходимости сменить `recruiter_id`, и повторно отправить его на валидацию.
 
 5. `POST /employers/{company_id}/vacancies/drafts/{draft_id}/publish`  
 Назначение: поставить публикацию валидного черновика в очередь.  
@@ -133,6 +143,11 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 Назначение: удалить черновик (если он еще не связан с финальной вакансией).
 
 #### 4.4.1. Поля payload для create/update
+
+Дополнительное поле верхнего уровня для `POST` и `PATCH`:
+- `recruiter_id` - optional ID рекрутера внутри текущей компании. Если не передан:
+  - в `POST` черновик назначается на текущего авторизованного рекрутера;
+  - в `PATCH` сохраняется текущий `recruiter_id` черновика.
 
 Для `POST` обязательны:
 - `position` - название вакансии.
@@ -164,6 +179,8 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 - редактирование (`PATCH`) разрешено только для `new`, `rejected`, `validated`;
 - публикация (`/publish`) разрешена только для `validated` и при `vacancy_id = null`;
 - удаление запрещено, если статус `accepted` или уже есть `vacancy_id`.
+- все операции с черновиками доступны любому рекрутеру текущей компании;
+- `recruiter_id` можно менять только на активного рекрутера той же компании.
 
 #### 4.4.3. Ошибки валидации
 
@@ -284,6 +301,7 @@ curl --request POST \
   --header "Authorization: Bearer <access_token>" \
   --header "Content-Type: application/json" \
   --data '{
+    "recruiter_id": 101,
     "payload": {
       "position": "Senior Python Developer",
       "location_requirements": [{"location_raw": "Белград"}],
@@ -344,6 +362,7 @@ curl --request PATCH \
   --header "Authorization: Bearer <access_token>" \
   --header "Content-Type: application/json" \
   --data '{
+    "recruiter_id": 115,
     "payload": {
       "description": "Полное описание вакансии с задачами и требованиями"
     }
