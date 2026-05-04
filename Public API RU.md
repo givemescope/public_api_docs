@@ -18,6 +18,7 @@ Public API использует OAuth2 Bearer Token.
 - `manage_token` (для настройки redirect_uri)
 - `redirect_uri`
 
+`client_id`, `client_secret` и `manage_token` нужно получить через своего менеджера в getmatch.
 
 ### 2.2. Заголовок авторизации
 
@@ -211,6 +212,12 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 - по умолчанию отклик возвращается в закрытом виде: `contact` пустой, `last_name` и `birth_date` равны `null`;
 - если передан `open_contacts=true`, API попытается раскрыть контакты и тогда запрос может повлиять на лимиты раскрытия контактов.
 
+Возможные значения `contact[].type.id`:
+- `phone` - телефон;
+- `email` - email;
+- `telegram` - Telegram username;
+- `other` - другая ссылка из профиля кандидата, например GitHub или личный сайт.
+
 4. `POST /applications/{candidate_id}`
 Назначение: рассмотреть отклик (одобрить или отклонить).
 Payload:
@@ -290,6 +297,12 @@ Payload:
 Контакты и персональные данные в payload зависят от доступности контактов:
 - если в настройке webhook указано `include_contacts=false`, `contact` будет пустым, `last_name` и `birth_date` будут `null`;
 - если в настройке webhook указано `include_contacts=true`, webhook возвращает отклик с контактами независимо от текущего внутреннего статуса раскрытия.
+
+Возможные значения `application.contact[].type.id`:
+- `phone` - телефон;
+- `email` - email;
+- `telegram` - Telegram username;
+- `other` - другая ссылка из профиля кандидата, например GitHub или личный сайт.
 
 ## 5. Примеры использования: черновики вакансий
 
