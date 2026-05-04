@@ -18,6 +18,8 @@ Public API uses OAuth2 Bearer Token.
 - `manage_token` (for redirect_uri configuration)
 - `redirect_uri`
 
+You need to obtain `client_id`, `client_secret`, and `manage_token` through your getmatch manager.
+
 ### 2.2. Authorization Header
 
 Include the following header in all Public API requests (except OAuth requests):
@@ -208,6 +210,12 @@ Rules:
 - by default the application is returned in closed form: `contact` is empty, `last_name` and `birth_date` are `null`;
 - if `open_contacts=true` is passed, the API will try to reveal contacts and the request may affect contact reveal limits.
 
+Possible `contact[].type.id` values:
+- `phone` - phone number;
+- `email` - email address;
+- `telegram` - Telegram username;
+- `other` - another link from the candidate profile, for example GitHub or a personal website.
+
 4. `POST /applications/{candidate_id}`
 Purpose: review an application (approve or reject).
 Payload:
@@ -287,6 +295,12 @@ Important:
 Contacts and personal data depend on contacts visibility:
 - if webhook setting `include_contacts=false`, `contact` is empty and `last_name`/`birth_date` are `null`;
 - if webhook setting `include_contacts=true`, webhook payloads include contacts regardless of the internal contact visibility state of the application.
+
+Possible `application.contact[].type.id` values:
+- `phone` - phone number;
+- `email` - email address;
+- `telegram` - Telegram username;
+- `other` - another link from the candidate profile, for example GitHub or a personal website.
 
 ## 5. Usage Examples: Vacancy Drafts
 
