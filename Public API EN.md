@@ -115,7 +115,7 @@ Parameters:
 Purpose: unpublish a vacancy.
 Parameters:
 - `company_id` - company ID (can be obtained from `/me`).
-- `vacancy_id` - vacancy hash ID from `GET /vacancies/` or `GET /employers/{company_id}/vacancies/active`.
+- `vacancy_id` - vacancy ID from `GET /vacancies/` or `GET /employers/{company_id}/vacancies/active`.
 Successful response: `{}`.
 
 ### 4.4. Vacancy Drafts
@@ -466,7 +466,7 @@ Response:
 ```json
 {
   "event": "application_status_changed",
-  "vacancy_hash_id": "k0N5LqA4",
+  "vacancy_id": 14567,
   "state": {
     "id": "in_progress",
     "name": "В работе"
@@ -516,7 +516,7 @@ Response:
 ```json
 {
   "event": "application_status_changed",
-  "vacancy_hash_id": "k0N5LqA4",
+  "vacancy_id": 14567,
   "state": {
     "id": "in_progress",
     "name": "В работе"
