@@ -117,7 +117,7 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 Назначение: снять вакансию с публикации.
 Параметры:
 - `company_id` - ID компании (можно получить в `/me`).
-- `vacancy_id` - hash ID вакансии из `GET /vacancies/` или `GET /employers/{company_id}/vacancies/active`.
+- `vacancy_id` - ID вакансии из `GET /vacancies/` или `GET /employers/{company_id}/vacancies/active`.
 Успешный ответ: `{}`.
 
 ### 4.4. Черновики вакансий
@@ -467,7 +467,7 @@ curl --request GET \
 ```json
 {
   "event": "application_status_changed",
-  "vacancy_hash_id": "k0N5LqA4",
+  "vacancy_id": 14567,
   "state": {
     "id": "in_progress",
     "name": "В работе"
@@ -517,7 +517,7 @@ curl --request GET \
 ```json
 {
   "event": "application_status_changed",
-  "vacancy_hash_id": "k0N5LqA4",
+  "vacancy_id": 14567,
   "state": {
     "id": "in_progress",
     "name": "В работе"
