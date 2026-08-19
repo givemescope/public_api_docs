@@ -129,7 +129,22 @@ Current quotas:
 | `profile_view` | 300 | 900 | 1500 | 9000 |
 | `open_contacts` | 300 | 900 | 1500 | 9000 |
 
-`429` example:
+On top of the daily quotas there is a search burst limit: at most 20 requests per minute per
+recruiter and 60 per minute per company. When it fires, the API returns `429` with
+`detail.code = "rate_limit_exceeded"` and a `Retry-After` header (in seconds).
+The daily quota is **not** consumed in that case - a burst-rejected request can be retried.
+
+`429` example for the burst limit:
+```json
+{
+  "detail": {
+    "code": "rate_limit_exceeded",
+    "message": "Too many search requests in a short period. Slow down and retry later."
+  }
+}
+```
+
+`429` example for an exhausted daily quota:
 ```json
 {
   "detail": {
@@ -172,7 +187,7 @@ Important:
 
 1. `GET /candidates`
 Purpose: search candidates published in getmatch collections (the shared pool).
-Every call consumes one unit of the `search` limit.
+Every call consumes one unit of the `search` limit and counts towards the burst limit (see 4.2.1).
 
 Cards are returned anonymized: contacts, name and photo stay hidden until the candidate's contacts
 are opened via `GET /profiles/get_profile/dp/{id}`.
@@ -870,5 +885,7 @@ curl --request GET \
 - `405 Method Not Allowed` - operation is not allowed for the current recruiter
 - `409 Conflict` - state conflict (draft status, repeated application resolution)
 - `422 Unprocessable Entity` - request payload schema error
-- `429 Too Many Requests` - a rate limit is exhausted (`search` / `profile_view` / `open_contacts`),
-  details in the structured `detail`, retry is possible after `reset_at` (see 4.2)
+- `429 Too Many Requests` - a rate limit fired. Two cases, told apart by `detail.code`:
+  `rate_limit_exceeded` - too many requests per minute, retry after `Retry-After`;
+  `digest_limit_exceeded` - the daily or monthly quota is spent (`search` / `profile_view` /
+  `open_contacts`), retry after `reset_at` (see 4.2)
