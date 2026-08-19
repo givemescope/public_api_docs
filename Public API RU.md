@@ -128,7 +128,22 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 | `profile_view` | 300 | 900 | 1500 | 9000 |
 | `open_contacts` | 300 | 900 | 1500 | 9000 |
 
-Пример `429`:
+Поверх суточных квот действует бёрст-лимит на поиск: не более 20 запросов в минуту на рекрутера
+и 60 в минуту на компанию. При его срабатывании возвращается `429` с
+`detail.code = "rate_limit_exceeded"` и заголовком `Retry-After` (в секундах).
+Суточная квота при этом **не** расходуется - отклоненный по бёрст-лимиту запрос можно повторить.
+
+Пример `429` по бёрст-лимиту:
+```json
+{
+  "detail": {
+    "code": "rate_limit_exceeded",
+    "message": "Too many search requests in a short period. Slow down and retry later."
+  }
+}
+```
+
+Пример `429` по исчерпанной суточной квоте:
 ```json
 {
   "detail": {
@@ -171,7 +186,7 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 
 1. `GET /candidates`
 Назначение: искать кандидатов, опубликованных в подборках getmatch (общий пул).
-Каждый вызов расходует одну единицу лимита `search`.
+Каждый вызов расходует одну единицу лимита `search` и учитывается в бёрст-лимите (см. 4.2.1).
 
 Карточки возвращаются анонимными: контакты, имя и фото скрыты до тех пор, пока контакты
 кандидата не будут открыты через `GET /profiles/get_profile/dp/{id}`.
@@ -869,5 +884,7 @@ curl --request GET \
 - `405 Method Not Allowed` - операция недоступна для текущего рекрутера
 - `409 Conflict` - конфликт состояния (статус черновика, повторное решение по отклику)
 - `422 Unprocessable Entity` - ошибка схемы входных данных
-- `429 Too Many Requests` - исчерпан частотный лимит (`search` / `profile_view` / `open_contacts`),
-  подробности в структурированном `detail`, повтор возможен после `reset_at` (см. 4.2)
+- `429 Too Many Requests` - сработал частотный лимит. Два варианта, различаются по `detail.code`:
+  `rate_limit_exceeded` - слишком много запросов в минуту, повтор через `Retry-After`;
+  `digest_limit_exceeded` - исчерпана суточная или месячная квота (`search` / `profile_view` /
+  `open_contacts`), повтор после `reset_at` (см. 4.2)
