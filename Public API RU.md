@@ -260,8 +260,8 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 
 ### 4.5. Вакансии
 
-Во всех ручках `vacancy_id` - числовой ID вакансии (например `14567`), он же приходит в
-`GET /vacancies/` и `GET /employers/{company_id}/vacancies/active`.
+Во всех ручках `vacancy_id` - числовой ID вакансии (например `14567`). Он приходит в
+`GET /vacancies/`, `GET /employers/{company_id}/vacancies/active` и в поле `vacancy_id` принятого черновика.
 
 1. `GET /vacancies/`
 Назначение: получить список активных вакансий авторизованной компании.
@@ -274,11 +274,108 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 - `page` - номер страницы, начиная с `0`.
 - `per_page` - размер страницы (`1..200`, по умолчанию `20`).
 
-3. `POST /employers/{company_id}/vacancies/{vacancy_id}/archive`
+3. `GET /employers/{company_id}/vacancies/{vacancy_id}`
+Назначение: получить вакансию компании целиком: описание, зарплату, локации, требования и статус.
+Ручка подходит, чтобы связать вакансию, опубликованную в getmatch вручную, с вашей системой.
+Правила:
+- отдает активные и архивные вакансии компании, признак активности - поле `is_active`;
+- удаленная вакансия и вакансия другой компании возвращают `404`.
+
+Поля ответа:
+
+| Поле | Описание |
+| --- | --- |
+| `id`, `name`, `created_at`, `published_at`, `archive_date`, `archived_at`, `is_active` | те же, что в ответе `/prolong` |
+| `publication_status` | `published` - вакансия публиковалась (активна ли она сейчас, смотрите в `is_active`), `queued` - стоит в очереди на публикацию, `unpublished` - еще не публиковалась |
+| `url` | ссылка на страницу вакансии на getmatch |
+| `recruiter_id` | ID рекрутера - владельца вакансии |
+| `position` | название вакансии |
+| `description` | описание вакансии в том виде, в котором оно сохранено в getmatch |
+| `short_description`, `stack_description` | короткое описание и описание стека, есть у части старых вакансий, иначе `null` |
+| `specializations` | слаги специализаций |
+| `stack` | названия навыков |
+| `location_requirements` | список локаций: `location_id`, `city`, `country`, `format` (формат работы), `ancestors`, `metros`; `location_raw` всегда `null` |
+| `location_validation` | проверять ли локацию кандидата |
+| `salary_display_from`, `salary_display_to`, `salary_taxes`, `salary_is_total` | вилка, как ее указала компания |
+| `salary_currency` | `RUB`, `USD` или `EUR` |
+| `salary_hidden`, `salary_hidden_variant` | скрыта ли вилка от кандидатов и как; числа вилки в ответе есть всегда |
+| `incognito_publication` | скрыто ли название компании от кандидатов |
+| `cover_letter_required`, `cover_letter_placeholder` | настройки сопроводительного письма |
+| `language` | `ru` или `eng` |
+| `type` | `only_web` или `web_and_tg` |
+| `required_years_of_experience` | требуемый опыт в годах |
+| `seniorities` | список уровней: `junior`, `middle`, `senior`, `lead`, `c_level` |
+| `english_level` | `a1`, `a2`, `b1`, `b2`, `c` или `null` |
+| `auto_prolong` | включено ли автопродление |
+
+Значения полей совпадают с payload черновика (см. 4.6.1). Отличий четыре:
+- уровень приходит списком `seniorities`, а не одним `seniority`;
+- формат работы приходит в каждом элементе `location_requirements`, отдельного `work_format` нет;
+- в `location_requirements` приходят разобранные локации, а не `location_raw`;
+- валюта приходит кодом в верхнем регистре: `RUB`, `USD`, `EUR`.
+
+Пример запроса:
+```bash
+curl --request GET \
+  --url "https://getmatch.ru/api/integrations/v1/employers/<company_id>/vacancies/14567" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Пример ответа:
+```json
+{
+  "id": "14567",
+  "name": "Senior Python Developer",
+  "created_at": "2026-03-05T10:15:30+0000",
+  "published_at": "2026-03-06T09:00:00+0000",
+  "archive_date": "2026-04-06",
+  "archived_at": null,
+  "is_active": true,
+  "publication_status": "published",
+  "url": "https://getmatch.ru/vacancies/14567",
+  "recruiter_id": 101,
+  "position": "Senior Python Developer",
+  "description": "<p>Мы ищем Senior Python разработчика...</p>",
+  "short_description": null,
+  "stack_description": null,
+  "specializations": ["backend"],
+  "stack": ["Python", "FastAPI", "PostgreSQL"],
+  "location_requirements": [
+    {
+      "location_id": "moscow__mo__russia",
+      "location_raw": null,
+      "format": "hybrid",
+      "city": "Москва",
+      "country": "Россия",
+      "ancestors": ["moscow", "mo__russia", "russia", "_cu-europe", "_cu-emea"],
+      "metros": []
+    }
+  ],
+  "location_validation": false,
+  "salary_display_from": 400000,
+  "salary_display_to": 550000,
+  "salary_currency": "RUB",
+  "salary_hidden": false,
+  "salary_hidden_variant": null,
+  "salary_taxes": "gross",
+  "salary_is_total": false,
+  "incognito_publication": false,
+  "cover_letter_required": false,
+  "cover_letter_placeholder": null,
+  "language": "ru",
+  "type": "web_and_tg",
+  "required_years_of_experience": 5,
+  "seniorities": ["senior"],
+  "english_level": "b2",
+  "auto_prolong": true
+}
+```
+
+4. `POST /employers/{company_id}/vacancies/{vacancy_id}/archive`
 Назначение: снять вакансию с публикации.
 Успешный ответ: `{}`.
 
-4. `POST /employers/{company_id}/vacancies/{vacancy_id}/prolong`
+5. `POST /employers/{company_id}/vacancies/{vacancy_id}/prolong`
 Назначение: продлить публикацию вакансии.
 Правила:
 - продление доступно, только когда до `archive_date` осталось меньше 7 дней,
@@ -301,7 +398,7 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 }
 ```
 
-5. `POST /employers/{company_id}/vacancies/{vacancy_id}/boost`
+6. `POST /employers/{company_id}/vacancies/{vacancy_id}/boost`
 Назначение: поднять вакансию и разослать ее подходящим кандидатам.
 Payload:
 - `include_viewed` - опциональный boolean, по умолчанию `true`: рассылать ли тем,
@@ -494,6 +591,12 @@ Payload:
 - `url` - валидный HTTP/HTTPS URL, либо `null`, чтобы отключить вебхук;
 - `include_contacts` - boolean-флаг, должен ли webhook присылать отклики с раскрытыми контактами.
 Ответ: текущие `url` и `include_contacts`.
+
+3. `DELETE /webhooks/applications`
+Назначение: отвязать вебхук откликов от компании.
+После вызова `url` становится `null`, `include_contacts` - `false`, события перестают приходить.
+Если вебхук не был настроен, ручка тоже отвечает успешно.
+Успешный ответ: `204 No Content`.
 
 Правила:
 - у компании поддерживается один URL вебхука откликов;
@@ -719,13 +822,11 @@ curl --request PUT \
   }'
 ```
 
-Отключить вебхук:
+Отвязать вебхук:
 ```bash
-curl --request PUT \
+curl --request DELETE \
   --url "https://getmatch.ru/api/integrations/v1/webhooks/applications" \
-  --header "Authorization: Bearer <access_token>" \
-  --header "Content-Type: application/json" \
-  --data '{"url": null, "include_contacts": false}'
+  --header "Authorization: Bearer <access_token>"
 ```
 
 ### 5.10. Пример payload входящего вебхука отклика без контактов
@@ -873,7 +974,7 @@ curl --request GET \
 ## 7. Типовые коды ответов
 
 - `200 OK` - успешный запрос
-- `204 No Content` - успешное удаление черновика
+- `204 No Content` - успешное удаление черновика или вебхука откликов
 - `400 Bad Request` - некорректные параметры или недопустимый переход статуса отклика
 - `401 Unauthorized` - отсутствует/некорректный/просроченный токен
 - `402 Payment Required` - закончилась оплаченная квота: пакет открытий контактов

@@ -261,8 +261,8 @@ Response fields for both endpoints:
 
 ### 4.5. Vacancies
 
-In all endpoints `vacancy_id` is the numeric vacancy ID (for example `14567`), the same one returned
-by `GET /vacancies/` and `GET /employers/{company_id}/vacancies/active`.
+In all endpoints `vacancy_id` is the numeric vacancy ID (for example `14567`). It is returned
+by `GET /vacancies/`, `GET /employers/{company_id}/vacancies/active` and in the `vacancy_id` field of an accepted draft.
 
 1. `GET /vacancies/`
 Purpose: get the list of active vacancies for the authorized company.
@@ -275,11 +275,108 @@ Parameters:
 - `page` - page number, starting from `0`.
 - `per_page` - page size (`1..200`, default `20`).
 
-3. `POST /employers/{company_id}/vacancies/{vacancy_id}/archive`
+3. `GET /employers/{company_id}/vacancies/{vacancy_id}`
+Purpose: get the full company vacancy: description, salary, locations, requirements and status.
+Use it to link a vacancy that was published in getmatch manually to your system.
+Rules:
+- returns active and archived company vacancies, the `is_active` field tells them apart;
+- a deleted vacancy or a vacancy of another company returns `404`.
+
+Response fields:
+
+| Field | Description |
+| --- | --- |
+| `id`, `name`, `created_at`, `published_at`, `archive_date`, `archived_at`, `is_active` | the same as in the `/prolong` response |
+| `publication_status` | `published` - the vacancy was published (use `is_active` to see if it is live now), `queued` - waiting in the publication queue, `unpublished` - not published yet |
+| `url` | link to the vacancy page on getmatch |
+| `recruiter_id` | ID of the recruiter who owns the vacancy |
+| `position` | vacancy title |
+| `description` | vacancy description as it is stored in getmatch |
+| `short_description`, `stack_description` | short description and stack description, set only for some older vacancies, otherwise `null` |
+| `specializations` | specialization slugs |
+| `stack` | skill names |
+| `location_requirements` | list of locations: `location_id`, `city`, `country`, `format` (work format), `ancestors`, `metros`; `location_raw` is always `null` |
+| `location_validation` | whether the candidate location is checked |
+| `salary_display_from`, `salary_display_to`, `salary_taxes`, `salary_is_total` | salary range as the company entered it |
+| `salary_currency` | `RUB`, `USD` or `EUR` |
+| `salary_hidden`, `salary_hidden_variant` | whether and how the range is hidden from candidates; the range numbers are always in the response |
+| `incognito_publication` | whether the company name is hidden from candidates |
+| `cover_letter_required`, `cover_letter_placeholder` | cover letter settings |
+| `language` | `ru` or `eng` |
+| `type` | `only_web` or `web_and_tg` |
+| `required_years_of_experience` | required experience in years |
+| `seniorities` | list of levels: `junior`, `middle`, `senior`, `lead`, `c_level` |
+| `english_level` | `a1`, `a2`, `b1`, `b2`, `c` or `null` |
+| `auto_prolong` | whether auto-prolongation is on |
+
+Field values match the draft payload (see 4.6.1). There are four differences:
+- the level comes as the `seniorities` list, not as a single `seniority`;
+- the work format comes in each `location_requirements` item, there is no separate `work_format`;
+- `location_requirements` contains resolved locations, not `location_raw`;
+- the currency comes as an upper-case code: `RUB`, `USD`, `EUR`.
+
+Request example:
+```bash
+curl --request GET \
+  --url "https://getmatch.ru/api/integrations/v1/employers/<company_id>/vacancies/14567" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Response example:
+```json
+{
+  "id": "14567",
+  "name": "Senior Python Developer",
+  "created_at": "2026-03-05T10:15:30+0000",
+  "published_at": "2026-03-06T09:00:00+0000",
+  "archive_date": "2026-04-06",
+  "archived_at": null,
+  "is_active": true,
+  "publication_status": "published",
+  "url": "https://getmatch.ru/vacancies/14567",
+  "recruiter_id": 101,
+  "position": "Senior Python Developer",
+  "description": "<p>We are looking for a Senior Python developer...</p>",
+  "short_description": null,
+  "stack_description": null,
+  "specializations": ["backend"],
+  "stack": ["Python", "FastAPI", "PostgreSQL"],
+  "location_requirements": [
+    {
+      "location_id": "moscow__mo__russia",
+      "location_raw": null,
+      "format": "hybrid",
+      "city": "Москва",
+      "country": "Россия",
+      "ancestors": ["moscow", "mo__russia", "russia", "_cu-europe", "_cu-emea"],
+      "metros": []
+    }
+  ],
+  "location_validation": false,
+  "salary_display_from": 400000,
+  "salary_display_to": 550000,
+  "salary_currency": "RUB",
+  "salary_hidden": false,
+  "salary_hidden_variant": null,
+  "salary_taxes": "gross",
+  "salary_is_total": false,
+  "incognito_publication": false,
+  "cover_letter_required": false,
+  "cover_letter_placeholder": null,
+  "language": "ru",
+  "type": "web_and_tg",
+  "required_years_of_experience": 5,
+  "seniorities": ["senior"],
+  "english_level": "b2",
+  "auto_prolong": true
+}
+```
+
+4. `POST /employers/{company_id}/vacancies/{vacancy_id}/archive`
 Purpose: unpublish a vacancy.
 Successful response: `{}`.
 
-4. `POST /employers/{company_id}/vacancies/{vacancy_id}/prolong`
+5. `POST /employers/{company_id}/vacancies/{vacancy_id}/prolong`
 Purpose: prolong the vacancy publication.
 Rules:
 - prolongation is available only when less than 7 days are left until `archive_date`,
@@ -302,7 +399,7 @@ Response:
 }
 ```
 
-5. `POST /employers/{company_id}/vacancies/{vacancy_id}/boost`
+6. `POST /employers/{company_id}/vacancies/{vacancy_id}/boost`
 Purpose: boost the vacancy and send it to matching candidates.
 Payload:
 - `include_viewed` - optional boolean, default `true`: whether to send it to candidates who have
@@ -494,6 +591,12 @@ Payload:
 - `url` - a valid HTTP/HTTPS URL, or `null` to disable webhooks;
 - `include_contacts` - boolean flag that controls whether webhook payloads include contacts.
 Response: current `url` and `include_contacts`.
+
+3. `DELETE /webhooks/applications`
+Purpose: unlink the applications webhook from the company.
+After the call `url` becomes `null`, `include_contacts` becomes `false`, and events stop coming.
+If no webhook was set, the call also succeeds.
+Successful response: `204 No Content`.
 
 Rules:
 - one applications webhook URL is supported per company;
@@ -720,13 +823,11 @@ curl --request PUT \
   }'
 ```
 
-Disable webhook:
+Unlink webhook:
 ```bash
-curl --request PUT \
+curl --request DELETE \
   --url "https://getmatch.ru/api/integrations/v1/webhooks/applications" \
-  --header "Authorization: Bearer <access_token>" \
-  --header "Content-Type: application/json" \
-  --data '{"url": null, "include_contacts": false}'
+  --header "Authorization: Bearer <access_token>"
 ```
 
 ### 5.10. Incoming application webhook payload example without contacts
@@ -874,7 +975,7 @@ curl --request GET \
 ## 7. Common Response Codes
 
 - `200 OK` - successful request
-- `204 No Content` - successful draft deletion
+- `204 No Content` - successful deletion of a draft or of the applications webhook
 - `400 Bad Request` - invalid parameters or a forbidden application status transition
 - `401 Unauthorized` - missing/invalid/expired token
 - `402 Payment Required` - a paid quota is used up: the contact opening package
