@@ -447,6 +447,11 @@ Successful response: `{"status": "queued"}`.
 Purpose: delete a draft (if it is not linked to a final vacancy yet).
 Successful response: `204 No Content`.
 
+7. `GET /locations?q=<name>&language=ru|en`
+Purpose: find a city or a country and get the `location_id` for `location_requirements`.
+Parameters: `q` - 2+ characters, `language` - language of the names (`ru` by default), `only_countries` - countries only.
+Response: list of `{location_id, description, city, country}`.
+
 #### 4.6.1. payload fields for create/update
 
 Additional top-level field for `POST` and `PATCH`:
@@ -486,7 +491,8 @@ Optional fields:
 
 `location_requirements` item:
 - `location_raw` - city or country: `"Belgrade"`, `"Serbia"`;
-- `location_id` - instead of `location_raw`, only `"_cu-world"` (worldwide) is accepted;
+- `location_id` - instead of `location_raw`: a value from `GET /locations` or `"_cu-world"` (worldwide).
+  An unknown `location_id` returns `422`;
 - `format` - work format for this location, same values as `work_format`;
 - `metros` - list of metro stations, Moscow and Saint Petersburg only.
 

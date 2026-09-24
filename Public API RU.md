@@ -446,6 +446,11 @@ Payload:
 Назначение: удалить черновик (если он еще не связан с финальной вакансией).
 Успешный ответ: `204 No Content`.
 
+7. `GET /locations?q=<название>&language=ru|en`
+Назначение: найти город или страну и получить `location_id` для `location_requirements`.
+Параметры: `q` - от 2 символов, `language` - язык названий (по умолчанию `ru`), `only_countries` - только страны.
+Ответ: список `{location_id, description, city, country}`.
+
 #### 4.6.1. Поля payload для create/update
 
 Дополнительное поле верхнего уровня для `POST` и `PATCH`:
@@ -485,7 +490,8 @@ Payload:
 
 Элемент `location_requirements`:
 - `location_raw` - город или страна: `"Москва"`, `"Сербия"`;
-- `location_id` - вместо `location_raw`, принимается только `"_cu-world"` (весь мир);
+- `location_id` - вместо `location_raw`: значение из `GET /locations` или `"_cu-world"` (весь мир).
+  Неизвестный `location_id` вернет `422`;
 - `format` - формат работы для этой локации, значения как у `work_format`;
 - `metros` - список станций метро, только для Москвы и Санкт-Петербурга.
 
