@@ -52,6 +52,8 @@ curl -X GET 'https://getmatch.ru/api/oauth/clients/{client_id}' -H 'Content-Type
 
 Для получения authorization_code пользователь должен выполнить вход в getmatch по ссылке: https://getmatch.ru/employer/oauth?redirect_uri={redirect_uri}&client_id={client_id}.
 После успешного входа пользователь будет перенаправлен на указанный redirect_uri с дополнительным параметром code={authorization_code}.
+Если пользователь нажмет «Отмена», вместо `code` придет параметр `error=access_denied`.
+`authorization_code` одноразовый: повторный обмен вернет `400`.
 
 Оба эндпоинта принимают тело как в `application/json`, так и в `application/x-www-form-urlencoded` или `multipart/form-data`.
 
@@ -187,6 +189,8 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 1. `GET /candidates`
 Назначение: искать кандидатов, опубликованных в подборках getmatch (общий пул).
 Каждый вызов расходует одну единицу лимита `search` и учитывается в бёрст-лимите (см. 4.2.1).
+Поиск включается дополнительно вашим менеджером getmatch. Если он не включен, вернется `402`
+(`detail.code = "public_api_search_payment_required"`).
 
 Карточки возвращаются анонимными: контакты, имя и фото скрыты до тех пор, пока контакты
 кандидата не будут открыты через `GET /profiles/get_profile/dp/{id}`.
@@ -448,6 +452,9 @@ Payload:
 - `recruiter_id` - опциональный ID рекрутера внутри текущей компании. Если не передан:
   - в `POST` черновик назначается на текущего авторизованного рекрутера;
   - в `PATCH` сохраняется текущий `recruiter_id` черновика.
+- `publish_immediately` - bool, по умолчанию `true`: черновик публикуется автоматически после валидации.
+  `false` - черновик остается в `validated`, опубликовать его можно через `/publish`.
+  В `PATCH` без этого поля сохраняется текущее значение.
 
 Для `POST` обязательны:
 - `position` - название вакансии.
@@ -462,8 +469,8 @@ Payload:
 
 | Поле | Значения | Описание |
 | --- | --- | --- |
-| `location_requirements` | список `{"location_raw": "<текст локации>"}` | требования к локации |
-| `work_format` | `office`, `hybrid`, `remote`, `relocation_company`, `relocation_candidate` | формат работы, применяется ко всем элементам `location_requirements` |
+| `location_requirements` | список объектов, см. ниже | требования к локации |
+| `work_format` | `office`, `hybrid`, `remote`, `relocation_company`, `relocation_candidate` | формат работы для элементов `location_requirements` без своего `format` |
 | `description` | строка `1000..30000` символов | описание вакансии, допускается HTML |
 | `seniority` | `junior`, `middle`, `senior`, `lead`, `c_level` | уровень |
 | `english_level` | `a1`, `a2`, `b1`, `b2`, `c` (`c1` и `c2` принимаются как `c`) | требуемый английский |
@@ -476,15 +483,22 @@ Payload:
 | `location_validation` | bool | проверять локацию кандидата |
 | `auto_prolong` | bool | автопродление публикации |
 
+Элемент `location_requirements`:
+- `location_raw` - город или страна: `"Москва"`, `"Сербия"`;
+- `location_id` - вместо `location_raw`, принимается только `"_cu-world"` (весь мир);
+- `format` - формат работы для этой локации, значения как у `work_format`;
+- `metros` - список станций метро, только для Москвы и Санкт-Петербурга.
+
 Важно:
 - схема payload строгая: неизвестное поле приводит к `422`;
 - минимальная длина `description` - 1000 символов, это частая причина `422`;
-- для `PATCH` передается только `payload` с изменяемыми полями (частичное обновление).
+- для `PATCH` передается только `payload` с изменяемыми полями (частичное обновление);
+- `work_format` в `PATCH` без `location_requirements` применяется ко всем сохраненным локациям.
 
 #### 4.6.2. Поля ответа
 
 `id`, `status`, `errors`, `recruiter_id`, `recruiter_hash_id`, `company_id`, `vacancy_id`,
-`can_publish`, `payload`, `created_at`, `updated_at`.
+`can_publish`, `publish_immediately`, `payload`, `created_at`, `updated_at`.
 
 Поле `can_publish` показывает, хватит ли у компании доступных публикаций, чтобы
 опубликовать этот черновик.
@@ -503,6 +517,8 @@ Payload:
 - редактирование (`PATCH`) разрешено только для `new`, `rejected`, `validated`, иначе `409`;
 - публикация (`/publish`) разрешена только для `validated` и при `vacancy_id = null`, иначе `409`;
 - если у компании не осталось доступных публикаций, `/publish` вернет `402`;
+- при `publish_immediately = true` черновик из `validated` публикуется автоматически; если публикаций
+  не хватает, он остается в `validated`;
 - удаление запрещено, если статус `accepted` или уже есть `vacancy_id`, иначе `409`;
 - все операции с черновиками доступны любому рекрутеру текущей компании;
 - `recruiter_id` можно менять только на активного рекрутера той же компании.
@@ -979,8 +995,10 @@ curl --request GET \
 - `401 Unauthorized` - отсутствует/некорректный/просроченный токен
 - `402 Payment Required` - закончилась оплаченная квота: пакет открытий контактов
   (`detail.code = "contacts_quota_exhausted"`) или доступные публикации вакансий (`/publish`).
+  Для поиска - поиск не подключен (`detail.code = "public_api_search_payment_required"`).
   Повторять запрос бесполезно - нужна докупка
-- `403 Forbidden` - операция сейчас недоступна (например, слишком рано продлевать вакансию)
+- `403 Forbidden` - операция сейчас недоступна (например, слишком рано продлевать вакансию) или доступ
+  компании к API отключен
 - `404 Not Found` - объект не найден или недоступен
 - `405 Method Not Allowed` - операция недоступна для текущего рекрутера
 - `409 Conflict` - конфликт состояния (статус черновика, повторное решение по отклику)
