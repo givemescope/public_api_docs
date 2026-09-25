@@ -53,6 +53,8 @@ OAuth endpoints:
 To receive an authorization_code, a user must sign in to getmatch using:
 https://getmatch.ru/employer/oauth?redirect_uri={redirect_uri}&client_id={client_id}.
 After successful sign-in, the user is redirected to the specified redirect_uri with an extra parameter: `code={authorization_code}`.
+If the user clicks "Cancel", `error=access_denied` is passed instead of `code`.
+`authorization_code` is single-use: a repeated exchange returns `400`.
 
 Both endpoints accept the body as `application/json`, `application/x-www-form-urlencoded`, or `multipart/form-data`.
 
@@ -188,6 +190,8 @@ Important:
 1. `GET /candidates`
 Purpose: search candidates published in getmatch collections (the shared pool).
 Every call consumes one unit of the `search` limit and counts towards the burst limit (see 4.2.1).
+Search is enabled additionally by your getmatch manager. If it is not enabled, `402` is returned
+(`detail.code = "public_api_search_payment_required"`).
 
 Cards are returned anonymized: contacts, name and photo stay hidden until the candidate's contacts
 are opened via `GET /profiles/get_profile/dp/{id}`.
@@ -443,12 +447,20 @@ Successful response: `{"status": "queued"}`.
 Purpose: delete a draft (if it is not linked to a final vacancy yet).
 Successful response: `204 No Content`.
 
+7. `GET /locations?q=<name>&language=ru|en`
+Purpose: find a city or a country and get the `location_id` for `location_requirements`.
+Parameters: `q` - 2+ characters, `language` - language of the names (`ru` by default), `only_countries` - countries only.
+Response: list of `{location_id, description, city, country}`.
+
 #### 4.6.1. payload fields for create/update
 
 Additional top-level field for `POST` and `PATCH`:
 - `recruiter_id` - optional recruiter ID within the current company. If omitted:
   - on `POST`, the draft is assigned to the current authorized recruiter;
   - on `PATCH`, the current draft `recruiter_id` is preserved.
+- `publish_immediately` - bool, `true` by default: the draft is published automatically after validation.
+  `false` - the draft stays `validated` and can be published via `/publish`.
+  On `PATCH` without this field, the current value is preserved.
 
 Required for `POST`:
 - `position` - vacancy title.
@@ -463,8 +475,8 @@ Optional fields:
 
 | Field | Values | Description |
 | --- | --- | --- |
-| `location_requirements` | list of `{"location_raw": "<location text>"}` | location requirements |
-| `work_format` | `office`, `hybrid`, `remote`, `relocation_company`, `relocation_candidate` | work format, applied to every `location_requirements` item |
+| `location_requirements` | list of objects, see below | location requirements |
+| `work_format` | `office`, `hybrid`, `remote`, `relocation_company`, `relocation_candidate` | work format for `location_requirements` items without their own `format` |
 | `description` | string of `1000..30000` characters | vacancy description, HTML allowed |
 | `seniority` | `junior`, `middle`, `senior`, `lead`, `c_level` | seniority level |
 | `english_level` | `a1`, `a2`, `b1`, `b2`, `c` (`c1` and `c2` are accepted as `c`) | required English |
@@ -477,15 +489,23 @@ Optional fields:
 | `location_validation` | bool | validate the candidate's location |
 | `auto_prolong` | bool | auto-prolong the publication |
 
+`location_requirements` item:
+- `location_raw` - city or country: `"Belgrade"`, `"Serbia"`;
+- `location_id` - instead of `location_raw`: a value from `GET /locations` or `"_cu-world"` (worldwide).
+  An unknown `location_id` returns `422`;
+- `format` - work format for this location, same values as `work_format`;
+- `metros` - list of metro stations, Moscow and Saint Petersburg only.
+
 Important:
 - the payload schema is strict: an unknown field results in `422`;
 - the minimum `description` length is 1000 characters, a common cause of `422`;
-- for `PATCH`, send only the changed fields inside `payload` (partial update).
+- for `PATCH`, send only the changed fields inside `payload` (partial update);
+- `work_format` on `PATCH` without `location_requirements` is applied to all saved locations.
 
 #### 4.6.2. Response fields
 
 `id`, `status`, `errors`, `recruiter_id`, `recruiter_hash_id`, `company_id`, `vacancy_id`,
-`can_publish`, `payload`, `created_at`, `updated_at`.
+`can_publish`, `publish_immediately`, `payload`, `created_at`, `updated_at`.
 
 The `can_publish` field shows whether the company has enough available publications to publish
 this draft.
@@ -504,6 +524,8 @@ Rules:
 - editing (`PATCH`) is allowed only for `new`, `rejected`, `validated`, otherwise `409`;
 - publishing (`/publish`) is allowed only for `validated` and `vacancy_id = null`, otherwise `409`;
 - if the company has no publications left, `/publish` returns `402`;
+- with `publish_immediately = true` a `validated` draft is published automatically; if there are not
+  enough publications, it stays `validated`;
 - deletion is forbidden if status is `accepted` or `vacancy_id` is already set, otherwise `409`;
 - all draft operations are available to any recruiter of the current company;
 - `recruiter_id` can only be changed to an active recruiter from the same company.
@@ -980,8 +1002,10 @@ curl --request GET \
 - `401 Unauthorized` - missing/invalid/expired token
 - `402 Payment Required` - a paid quota is used up: the contact opening package
   (`detail.code = "contacts_quota_exhausted"`) or available vacancy publications (`/publish`).
+  For search - search is not enabled (`detail.code = "public_api_search_payment_required"`).
   Retrying will not help - more has to be purchased
-- `403 Forbidden` - the operation is not available right now (for example, too early to prolong a vacancy)
+- `403 Forbidden` - the operation is not available right now (for example, too early to prolong a vacancy) or
+  API access is disabled for the company
 - `404 Not Found` - object not found or unavailable
 - `405 Method Not Allowed` - operation is not allowed for the current recruiter
 - `409 Conflict` - state conflict (draft status, repeated application resolution)
