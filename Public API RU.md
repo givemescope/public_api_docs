@@ -262,6 +262,15 @@ curl -X POST 'https://getmatch.ru/api/oauth/refresh' -H 'Content-Type: applicati
 `hash_id`, `hash_type`, `name`, `photo_url`, `birthdate`, `general_info`, `links`, `contacts`,
 `locations`, `educations`, `languages`, `positions`, `skills`, `skills_detailed`.
 
+Навыки приходят в двух местах:
+- `skills`, `skills_detailed` - общий список навыков профиля. Кандидат заполняет его отдельно
+  от мест работы, поэтому список может быть пустым;
+- `positions[].skills`, `positions[].skills_detailed` - навыки, которые кандидат указал у
+  конкретного места работы.
+
+В обоих случаях `skills` - слаги навыков (название, если у навыка нет слага),
+`skills_detailed` - объекты `{name, slug}`.
+
 ### 4.5. Вакансии
 
 Во всех ручках `vacancy_id` - числовой ID вакансии (например `14567`). Он приходит в

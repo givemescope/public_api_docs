@@ -263,6 +263,15 @@ Response fields for both endpoints:
 `hash_id`, `hash_type`, `name`, `photo_url`, `birthdate`, `general_info`, `links`, `contacts`,
 `locations`, `educations`, `languages`, `positions`, `skills`, `skills_detailed`.
 
+Skills come in two places:
+- `skills`, `skills_detailed` - the profile-level skill list. The candidate fills it separately
+  from positions, so the list can be empty;
+- `positions[].skills`, `positions[].skills_detailed` - skills the candidate tagged on a
+  specific position.
+
+In both cases `skills` holds skill slugs (the name when a skill has no slug) and
+`skills_detailed` holds `{name, slug}` objects.
+
 ### 4.5. Vacancies
 
 In all endpoints `vacancy_id` is the numeric vacancy ID (for example `14567`). It is returned
