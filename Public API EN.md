@@ -432,6 +432,20 @@ Response:
 }
 ```
 
+7. `POST /employers/{company_id}/vacancies/{vacancy_id}/edit`
+Purpose: start editing a published or archived vacancy.
+Response: a draft with `kind = "edit"` (see 4.6) filled with the current vacancy data. If editing has
+already started and the changes are not applied yet, the same draft is returned.
+Next steps:
+- change the draft with `PATCH /employers/{company_id}/vacancies/drafts/{draft_id}`;
+- track it with `GET /employers/{company_id}/vacancies/drafts/{draft_id}` until `accepted` or `rejected`.
+Rules:
+- only the recruiter the vacancy belongs to can edit it, anyone else gets `404`;
+- after validation the changes are applied to the vacancy automatically: editing does not publish the
+  vacancy, does not change its publication period or status and does not consume plan publications;
+- `specializations`, `type` and `auto_prolong` cannot be changed and keep the vacancy values;
+- Telegram messages already sent to candidates are not updated.
+
 ### 4.6. Vacancy Drafts
 
 1. `POST /employers/{company_id}/vacancies/drafts`
@@ -440,7 +454,7 @@ Additionally: you may pass `recruiter_id` to assign the draft to another recruit
 
 2. `GET /employers/{company_id}/vacancies/drafts`
 Purpose: get company drafts (sorted by `updated_at DESC`).
-Important: drafts with `accepted` status are not included in this list.
+Important: drafts with `accepted` status and edit drafts (`kind = "edit"`) are not included in this list.
 
 3. `GET /employers/{company_id}/vacancies/drafts/{draft_id}`
 Purpose: get a company draft by ID.
@@ -509,15 +523,20 @@ Important:
 - the payload schema is strict: an unknown field results in `422`;
 - the minimum `description` length is 1000 characters, a common cause of `422`;
 - for `PATCH`, send only the changed fields inside `payload` (partial update);
-- `work_format` on `PATCH` without `location_requirements` is applied to all saved locations.
+- `work_format` on `PATCH` without `location_requirements` is applied to all saved locations;
+- for an edit draft (`kind = "edit"`) `specializations`, `type` and `auto_prolong` keep the vacancy
+  values, `publish_immediately` and `recruiter_id` are ignored.
 
 #### 4.6.2. Response fields
 
-`id`, `status`, `errors`, `recruiter_id`, `recruiter_hash_id`, `company_id`, `vacancy_id`,
+`id`, `kind`, `status`, `errors`, `recruiter_id`, `recruiter_hash_id`, `company_id`, `vacancy_id`,
 `can_publish`, `publish_immediately`, `payload`, `created_at`, `updated_at`.
 
+The `kind` field: `create` - a draft of a new vacancy, `edit` - changes to the existing vacancy
+`vacancy_id` (see `POST /employers/{company_id}/vacancies/{vacancy_id}/edit` in 4.5).
+
 The `can_publish` field shows whether the company has enough available publications to publish
-this draft.
+this draft. It is always `false` for an edit draft.
 
 #### 4.6.3. Draft lifecycle
 
@@ -529,6 +548,9 @@ this draft.
 - `publishing` - publication command is queued.
 - `accepted` - final vacancy created, `vacancy_id` is set.
 
+For an edit draft `validated` is followed by `publishing` right away, which means the changes are being
+applied; `accepted` means they are applied to the vacancy `vacancy_id`.
+
 Rules:
 - editing (`PATCH`) is allowed only for `new`, `rejected`, `validated`, otherwise `409`;
 - publishing (`/publish`) is allowed only for `validated` and `vacancy_id = null`, otherwise `409`;
@@ -536,7 +558,10 @@ Rules:
 - with `publish_immediately = true` a `validated` draft is published automatically; if there are not
   enough publications, it stays `validated`;
 - deletion is forbidden if status is `accepted` or `vacancy_id` is already set, otherwise `409`;
-- all draft operations are available to any recruiter of the current company;
+- an edit draft cannot be published (`/publish` returns `409`); it can be deleted while it is `new`,
+  `rejected` or `validated`, the vacancy stays unchanged;
+- all operations with drafts of new vacancies are available to any recruiter of the current company;
+  edit drafts are available only to the recruiter the vacancy belongs to, anyone else gets `404`;
 - `recruiter_id` can only be changed to an active recruiter from the same company.
 
 #### 4.6.4. Validation errors
@@ -841,7 +866,28 @@ curl --request POST \
   --data '{"include_viewed": false}'
 ```
 
-### 5.9. Configure applications webhook
+### 5.9. Edit a published vacancy
+
+Start editing: the response is an edit draft with the current vacancy data.
+```bash
+curl --request POST \
+  --url "https://getmatch.ru/api/integrations/v1/employers/<company_id>/vacancies/<vacancy_id>/edit" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Change the fields you need: they are applied to the vacancy after validation.
+```bash
+curl --request PATCH \
+  --url "https://getmatch.ru/api/integrations/v1/employers/<company_id>/vacancies/drafts/<draft_id>" \
+  --header "Authorization: Bearer <access_token>" \
+  --header "Content-Type: application/json" \
+  --data '{"payload": {"salary_display_from": 420000, "salary_display_to": 560000}}'
+```
+
+Then check the draft with `GET /employers/{company_id}/vacancies/drafts/{draft_id}` until `status` is
+`accepted` (applied) or `rejected` (see `errors`).
+
+### 5.10. Configure applications webhook
 
 ```bash
 curl --request PUT \
@@ -861,7 +907,7 @@ curl --request DELETE \
   --header "Authorization: Bearer <access_token>"
 ```
 
-### 5.10. Incoming application webhook payload example without contacts
+### 5.11. Incoming application webhook payload example without contacts
 
 ```json
 {
@@ -908,7 +954,7 @@ curl --request DELETE \
 }
 ```
 
-### 5.11. Incoming application webhook payload example with contacts
+### 5.12. Incoming application webhook payload example with contacts
 
 Only the personal fields differ:
 ```json
@@ -924,7 +970,7 @@ Only the personal fields differ:
 }
 ```
 
-### 5.12. Get an application without contacts (default behavior)
+### 5.13. Get an application without contacts (default behavior)
 
 ```bash
 curl --request GET \
@@ -944,7 +990,7 @@ Response example:
 }
 ```
 
-### 5.13. Get an application and reveal contacts
+### 5.14. Get an application and reveal contacts
 
 ```bash
 curl --request GET \
@@ -952,7 +998,7 @@ curl --request GET \
   --header "Authorization: Bearer <access_token>"
 ```
 
-### 5.14. Reject an application with reason
+### 5.15. Reject an application with reason
 
 ```bash
 curl --request POST \
@@ -975,7 +1021,7 @@ Response:
 }
 ```
 
-### 5.15. Set application status to hired
+### 5.16. Set application status to hired
 
 ```bash
 curl --request PUT \
