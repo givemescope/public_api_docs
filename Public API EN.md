@@ -557,9 +557,9 @@ Rules:
 - if the company has no publications left, `/publish` returns `402`;
 - with `publish_immediately = true` a `validated` draft is published automatically; if there are not
   enough publications, it stays `validated`;
-- deletion is forbidden if status is `accepted` or `vacancy_id` is already set, otherwise `409`;
+- a draft of a new vacancy cannot be deleted if status is `accepted` or `vacancy_id` is already set, otherwise `409`;
 - an edit draft cannot be published (`/publish` returns `409`); it can be deleted while it is `new`,
-  `rejected` or `validated`, the vacancy stays unchanged;
+  `rejected` or `validated`, otherwise `409`, the vacancy stays unchanged;
 - all operations with drafts of new vacancies are available to any recruiter of the current company;
   edit drafts are available only to the recruiter the vacancy belongs to, anyone else gets `404`;
 - `recruiter_id` can only be changed to an active recruiter from the same company.
