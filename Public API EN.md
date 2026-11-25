@@ -443,7 +443,9 @@ Rules:
 - only the recruiter the vacancy belongs to can edit it, anyone else gets `404`;
 - after validation the changes are applied to the vacancy automatically: editing does not publish the
   vacancy, does not change its publication period or status and does not consume plan publications;
-- `specializations`, `type` and `auto_prolong` cannot be changed and keep the vacancy values;
+- `specializations` and `type` cannot be changed and keep the vacancy values;
+- `auto_prolong` can be switched on or off: when on, the vacancy is prolonged at the end of each period
+  and consumes a plan publication every time;
 - Telegram messages already sent to candidates are not updated.
 
 ### 4.6. Vacancy Drafts
@@ -524,8 +526,8 @@ Important:
 - the minimum `description` length is 1000 characters, a common cause of `422`;
 - for `PATCH`, send only the changed fields inside `payload` (partial update);
 - `work_format` on `PATCH` without `location_requirements` is applied to all saved locations;
-- for an edit draft (`kind = "edit"`) `specializations`, `type` and `auto_prolong` keep the vacancy
-  values, `publish_immediately` and `recruiter_id` are ignored.
+- for an edit draft (`kind = "edit"`) `specializations` and `type` keep the vacancy values,
+  `publish_immediately` and `recruiter_id` are ignored, `auto_prolong` switches the vacancy auto-prolongation.
 
 #### 4.6.2. Response fields
 
