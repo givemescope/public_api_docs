@@ -431,6 +431,20 @@ Payload:
 }
 ```
 
+7. `POST /employers/{company_id}/vacancies/{vacancy_id}/edit`
+Назначение: начать редактирование опубликованной или архивной вакансии.
+Ответ: черновик с `kind = "edit"` (см. 4.6), заполненный текущими данными вакансии. Если редактирование
+уже начато и изменения еще не применены, возвращается тот же черновик.
+Дальше:
+- изменить черновик через `PATCH /employers/{company_id}/vacancies/drafts/{draft_id}`;
+- следить за ним через `GET /employers/{company_id}/vacancies/drafts/{draft_id}` до `accepted` или `rejected`.
+Правила:
+- редактировать может только рекрутер, за которым закреплена вакансия, для остальных `404`;
+- после проверки изменения применяются к вакансии автоматически: редактирование не публикует вакансию,
+  не меняет срок и статус публикации и не расходует публикации тарифа;
+- `specializations`, `type` и `auto_prolong` изменить нельзя, они остаются как у вакансии;
+- уже отправленные кандидатам сообщения в Telegram не обновляются.
+
 ### 4.6. Черновики вакансий
 
 1. `POST /employers/{company_id}/vacancies/drafts`
@@ -439,7 +453,7 @@ Payload:
 
 2. `GET /employers/{company_id}/vacancies/drafts`
 Назначение: получить список черновиков компании (отсортированы по `updated_at DESC`).
-Важно: черновики в статусе `accepted` в этот список не попадают.
+Важно: черновики в статусе `accepted` и черновики редактирования (`kind = "edit"`) в этот список не попадают.
 
 3. `GET /employers/{company_id}/vacancies/drafts/{draft_id}`
 Назначение: получить один черновик компании по ID.
@@ -508,15 +522,20 @@ Payload:
 - схема payload строгая: неизвестное поле приводит к `422`;
 - минимальная длина `description` - 1000 символов, это частая причина `422`;
 - для `PATCH` передается только `payload` с изменяемыми полями (частичное обновление);
-- `work_format` в `PATCH` без `location_requirements` применяется ко всем сохраненным локациям.
+- `work_format` в `PATCH` без `location_requirements` применяется ко всем сохраненным локациям;
+- у черновика редактирования (`kind = "edit"`) `specializations`, `type` и `auto_prolong` остаются как у
+  вакансии, `publish_immediately` и `recruiter_id` игнорируются.
 
 #### 4.6.2. Поля ответа
 
-`id`, `status`, `errors`, `recruiter_id`, `recruiter_hash_id`, `company_id`, `vacancy_id`,
+`id`, `kind`, `status`, `errors`, `recruiter_id`, `recruiter_hash_id`, `company_id`, `vacancy_id`,
 `can_publish`, `publish_immediately`, `payload`, `created_at`, `updated_at`.
 
+Поле `kind`: `create` - черновик новой вакансии, `edit` - изменения существующей вакансии
+`vacancy_id` (см. `POST /employers/{company_id}/vacancies/{vacancy_id}/edit` в 4.5).
+
 Поле `can_publish` показывает, хватит ли у компании доступных публикаций, чтобы
-опубликовать этот черновик.
+опубликовать этот черновик. У черновика редактирования оно всегда `false`.
 
 #### 4.6.3. Жизненный цикл черновика
 
@@ -528,14 +547,20 @@ Payload:
 - `publishing` - публикация поставлена в очередь.
 - `accepted` - создана финальная вакансия, в `vacancy_id` записан ID вакансии.
 
+У черновика редактирования за `validated` сразу следует `publishing` - изменения применяются;
+`accepted` означает, что они применены к вакансии `vacancy_id`.
+
 Правила:
 - редактирование (`PATCH`) разрешено только для `new`, `rejected`, `validated`, иначе `409`;
 - публикация (`/publish`) разрешена только для `validated` и при `vacancy_id = null`, иначе `409`;
 - если у компании не осталось доступных публикаций, `/publish` вернет `402`;
 - при `publish_immediately = true` черновик из `validated` публикуется автоматически; если публикаций
   не хватает, он остается в `validated`;
-- удаление запрещено, если статус `accepted` или уже есть `vacancy_id`, иначе `409`;
-- все операции с черновиками доступны любому рекрутеру текущей компании;
+- черновик новой вакансии нельзя удалить, если статус `accepted` или уже есть `vacancy_id`, иначе `409`;
+- черновик редактирования нельзя опубликовать (`/publish` вернет `409`); удалить его можно в статусах
+  `new`, `rejected` или `validated`, иначе `409`, вакансия при этом не меняется;
+- все операции с черновиками новых вакансий доступны любому рекрутеру текущей компании;
+  черновики редактирования доступны только рекрутеру, за которым закреплена вакансия, для остальных `404`;
 - `recruiter_id` можно менять только на активного рекрутера той же компании.
 
 #### 4.6.4. Ошибки валидации
@@ -840,7 +865,28 @@ curl --request POST \
   --data '{"include_viewed": false}'
 ```
 
-### 5.9. Настроить вебхук откликов
+### 5.9. Отредактировать опубликованную вакансию
+
+Начать редактирование: в ответе черновик редактирования с текущими данными вакансии.
+```bash
+curl --request POST \
+  --url "https://getmatch.ru/api/integrations/v1/employers/<company_id>/vacancies/<vacancy_id>/edit" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+Изменить нужные поля: они применятся к вакансии после проверки.
+```bash
+curl --request PATCH \
+  --url "https://getmatch.ru/api/integrations/v1/employers/<company_id>/vacancies/drafts/<draft_id>" \
+  --header "Authorization: Bearer <access_token>" \
+  --header "Content-Type: application/json" \
+  --data '{"payload": {"salary_display_from": 420000, "salary_display_to": 560000}}'
+```
+
+Затем проверять черновик через `GET /employers/{company_id}/vacancies/drafts/{draft_id}`, пока `status`
+не станет `accepted` (применено) или `rejected` (см. `errors`).
+
+### 5.10. Настроить вебхук откликов
 
 ```bash
 curl --request PUT \
@@ -860,7 +906,7 @@ curl --request DELETE \
   --header "Authorization: Bearer <access_token>"
 ```
 
-### 5.10. Пример payload входящего вебхука отклика без контактов
+### 5.11. Пример payload входящего вебхука отклика без контактов
 
 ```json
 {
@@ -907,7 +953,7 @@ curl --request DELETE \
 }
 ```
 
-### 5.11. Пример payload входящего вебхука отклика с контактами
+### 5.12. Пример payload входящего вебхука отклика с контактами
 
 Отличается только персональными полями:
 ```json
@@ -923,7 +969,7 @@ curl --request DELETE \
 }
 ```
 
-### 5.12. Получить отклик без контактов (поведение по умолчанию)
+### 5.13. Получить отклик без контактов (поведение по умолчанию)
 
 ```bash
 curl --request GET \
@@ -943,7 +989,7 @@ curl --request GET \
 }
 ```
 
-### 5.13. Получить отклик с раскрытием контактов
+### 5.14. Получить отклик с раскрытием контактов
 
 ```bash
 curl --request GET \
@@ -951,7 +997,7 @@ curl --request GET \
   --header "Authorization: Bearer <access_token>"
 ```
 
-### 5.14. Отклонить отклик с причиной
+### 5.15. Отклонить отклик с причиной
 
 ```bash
 curl --request POST \
@@ -974,7 +1020,7 @@ curl --request POST \
 }
 ```
 
-### 5.15. Обновить статус отклика на hired
+### 5.16. Обновить статус отклика на hired
 
 ```bash
 curl --request PUT \
